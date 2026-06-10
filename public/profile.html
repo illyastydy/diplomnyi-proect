@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web3-профіль працівника</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="layout">
+    <div class="topbar">
+      <div>
+        <h1>Web3-профіль працівника</h1>
+        <p class="muted">Репутаційний паспорт, історія продуктивності та персональні рекомендації.</p>
+        <p id="authInfo" class="muted small">Перевірка авторизації...</p>
+      </div>
+      <div class="nav-actions">
+        <a id="adminLink" href="admin.html" style="display:none">Панель керівника</a>
+        <a href="index.html">Головна</a>
+        <a href="passport.html">Web3-паспорт</a>
+        <button class="secondary" onclick="logout()">Вийти</button>
+      </div>
+    </div>
+    <section class="grid">
+      <section class="panel">
+        <label>Працівник</label>
+        <select id="employeeSelect"></select>
+        <button onclick="loadProfile()">Оновити профіль</button>
+        <div class="stats" style="margin-top:18px">
+          <div class="stat"><small>Локальні бали</small><b id="localPoints">0</b></div>
+          <div class="stat"><small>Задачі</small><b id="tasksCompleted">0</b></div>
+          <div class="stat"><small>Якість</small><b id="avgQuality">0</b></div>
+          <div class="stat"><small>Надійність</small><b id="reliability">100</b></div>
+          <div class="stat"><small>Грейд</small><b id="employeeGrade">—</b></div>
+          <div class="stat"><small>Статус</small><b id="employeeStatus">—</b></div>
+        </div>
+        <div id="nudge" class="panel nudge" style="margin-top:18px"></div>
+      </section>
+      <section class="panel">
+        <h2>Динаміка балів</h2>
+        <canvas id="pointsChart" height="220"></canvas>
+      </section>
+      <section class="panel full">
+        <h2>Індивідуальна траєкторія розвитку</h2>
+        <p class="muted small">Система автоматично підбирає навчальні ресурси після проблем із дедлайнами, якістю або конкретною категорією задач.</p>
+        <div id="recommendations" class="employee-list muted">Рекомендації завантажуються...</div>
+      </section>
+
+      <section class="panel full">
+        <h2>Історія задач</h2>
+        <table><thead><tr><th>Дата</th><th>Задача</th><th>Категорія</th><th>Бали</th><th>Якість</th><th>Дедлайн</th></tr></thead><tbody id="history"></tbody></table>
+      </section>
+    </section>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    let chart;
+    let currentUser;
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, options);
+      if (res.status === 401) window.location.href = '/login.html';
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error || 'Помилка сервера');
+      return data;
+    }
+
+    async function loadAuth() {
+      const data = await api('/api/auth/me');
+      currentUser = data.user;
+      $('authInfo').innerHTML = `Роль: <b>${currentUser.role}</b> · Wallet: <code>${currentUser.address}</code>`;
+      if (currentUser.role === 'admin') $('adminLink').style.display = 'inline-flex';
+    }
+
+    async function logout() {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    }
+
+    async function loadEmployees(){
+      try {
+        const employees = await api('/api/employees');
+        $('employeeSelect').innerHTML = employees.length
+          ? employees.map(e => `<option value="${e.tokenId}">${e.avatar || '👤'} ${e.name} — ${e.role}</option>`).join('')
+          : '<option value="">Працівників не знайдено</option>';
+        if (currentUser?.role === 'user') $('employeeSelect').disabled = true;
+        if (employees.length) await loadProfile();
+      } catch (err) {
+        $('employeeSelect').innerHTML = '<option value="">Помилка завантаження</option>';
+        $('nudge').className = 'panel nudge warning';
+        $('nudge').innerHTML = `<h3>Працівники не завантажились</h3><p>${err.message}</p>`;
+      }
+    }
+
+    async function loadProfile(){
+      const id = $('employeeSelect').value || 0;
+      const [summary, history, nudge, recommendations] = await Promise.all([
+        api(`/api/employee/${id}/summary`),
+        api(`/api/employee/${id}/history`),
+        api(`/api/employee/${id}/nudge`),
+        api(`/api/employee/${id}/recommendations`)
+      ]);
+      $('localPoints').innerText = summary.stats.localPoints || 0;
+      $('tasksCompleted').innerText = summary.stats.tasksCompleted || 0;
+      $('avgQuality').innerText = summary.stats.avgQuality ? `${summary.stats.avgQuality}/100` : '—';
+      $('reliability').innerText = `${summary.stats.lastReliability || 100}/100`;
+      $('employeeGrade').innerText = summary.employee.grade || 'Junior';
+      $('employeeStatus').innerText = summary.employee.status || 'active';
+      $('nudge').className = `panel nudge ${nudge.type || 'info'}`;
+      $('nudge').innerHTML = `<h3>${nudge.title || 'Рекомендація'}</h3><p>${nudge.message || ''}</p>${nudge.url ? `<a class="mini-link" href="${nudge.url}" target="_blank">Відкрити ресурс</a>` : ''}`;
+      renderRecommendations(recommendations);
+      $('history').innerHTML = history.length ? history.slice().reverse().map(row => `<tr><td>${new Date(row.createdAt).toLocaleString()}</td><td><b>${row.taskTitle}</b></td><td>${row.taskCategory}</td><td>${row.earnedPoints}${row.streakBonus ? ' 🔥' : ''}</td><td>${row.qualityScore}/100</td><td>${row.missedDeadline ? '❌' : '✅'}</td></tr>`).join('') : `<tr><td colspan="6" class="muted">Поки немає закритих задач</td></tr>`;
+      const labels = history.map(r => new Date(r.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+      const points = history.map(r => r.earnedPoints);
+      if (chart) chart.destroy();
+      chart = new Chart($('pointsChart'), { type:'line', data:{ labels, datasets:[{ label:'Бали за задачу', data:points, tension:.35, fill:true }] }, options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } } });
+    }
+
+
+    function recommendationStatusLabel(status) {
+      if (status === 'new') return '🆕 нова';
+      if (status === 'in_progress') return '⏳ проходжу';
+      if (status === 'completed') return '✅ пройдено';
+      if (status === 'dismissed') return '➖ неактуально';
+      return status || 'new';
+    }
+
+    function renderRecommendations(rows) {
+      const box = $('recommendations');
+      if (!rows.length) {
+        box.innerHTML = 'Поки немає індивідуальних рекомендацій. Вони зʼявляться після виконаних задач.';
+        return;
+      }
+
+      box.innerHTML = rows.map(r => `<div class="employee-row">
+        <span>${r.type === 'warning' ? '⚠️' : '📚'}</span>
+        <div style="flex:1">
+          <b>${r.provider} — ${r.title}</b><br>
+          <small>${r.category} · ${r.skillTag} · ${r.level} · ${recommendationStatusLabel(r.status)}</small><br>
+          <small>${r.reason}</small><br>
+          ${r.resourceReason ? `<small class="muted">${r.resourceReason}</small><br>` : ''}
+          <a class="mini-link" href="${r.url}" target="_blank">Відкрити курс / матеріал</a>
+        </div>
+        <div class="row-actions">
+          ${r.status !== 'in_progress' && r.status !== 'completed' ? `<button class="mini" onclick="updateRecommendationStatus(${r.id}, 'in_progress')">Почав</button>` : ''}
+          ${r.status !== 'completed' ? `<button class="mini" onclick="updateRecommendationStatus(${r.id}, 'completed')">Пройдено</button>` : ''}
+          ${r.status !== 'dismissed' ? `<button class="mini danger" onclick="updateRecommendationStatus(${r.id}, 'dismissed')">Неактуально</button>` : ''}
+        </div>
+      </div>`).join('');
+    }
+
+    async function updateRecommendationStatus(id, status) {
+      try {
+        await api(`/api/recommendations/${id}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status })
+        });
+        await loadProfile();
+      } catch (err) {
+        alert('Помилка: ' + err.message);
+      }
+    }
+
+    (async function init(){
+      await loadAuth();
+      await loadEmployees();
+    })();
+  </script>
+</body>
+</html>

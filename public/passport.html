@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web3-паспорт працівника</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="layout">
+    <section class="panel">
+      <div class="topbar">
+        <div>
+          <span class="badge">Web3 Passport</span>
+          <h1>Web3-паспорт працівника</h1>
+          <p class="muted">
+            Перевірка Soulbound NFT-паспорта, metadata, власника токена та репутації у смарт-контракті.
+          </p>
+        </div>
+        <div class="nav-actions">
+          <a href="profile.html">Профіль</a>
+          <a href="admin.html">Адмін-панель</a>
+          <a href="analytics.html">Аналітика</a>
+          <a href="index.html">Головна</a>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <div id="adminSelectorBox" style="display:none; margin-top:18px">
+        <label for="employeeSelect">Працівник</label>
+        <select id="employeeSelect"></select>
+        <button class="primary" onclick="loadSelectedPassport()">Відкрити паспорт</button>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="panel">
+        <h2>Картка паспорта</h2>
+        <div id="passportImageBox" style="margin-top:16px"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Дані працівника</h2>
+        <div id="employeeBox"></div>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="panel">
+        <h2>Blockchain-дані</h2>
+        <div id="blockchainBox"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Репутація у смарт-контракті</h2>
+        <div id="reputationBox"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Metadata JSON</h2>
+      <p class="muted">
+        Це дані, які читає MetaMask та інші NFT-сервіси через tokenURI.
+      </p>
+      <pre id="metadataBox" style="white-space:pre-wrap; overflow:auto"></pre>
+    </section>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let currentUser = null;
+
+    function setStatus(type, message) {
+      const el = $('status');
+      el.className = `status show ${type}`;
+      el.innerHTML = message;
+    }
+
+    async function api(url) {
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || data.error || 'Помилка API');
+      }
+
+      return data;
+    }
+
+    function shortAddress(address) {
+      if (!address) return '—';
+      return `${address.slice(0, 6)}...${address.slice(-4)}`;
+    }
+
+    function formatDateFromUnix(ts) {
+      if (!ts) return '—';
+      return new Date(ts * 1000).toLocaleString('uk-UA');
+    }
+
+    function renderEmployee(employee) {
+      $('employeeBox').innerHTML = `
+        <div class="employee-row">
+          <span>${employee.avatar || '👤'}</span>
+          <div>
+            <b>${employee.name}</b><br>
+            <small>${employee.role} · ${employee.grade || 'Junior'} · ${employee.status || 'active'}</small><br>
+            <small>Token ID: <code>${employee.tokenId}</code></small><br>
+            <small>Wallet у БД: <code>${employee.wallet || 'не привʼязаний'}</code></small>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderImage(metadata) {
+      if (!metadata || !metadata.image) {
+        $('passportImageBox').innerHTML = '<p class="muted">Зображення не знайдено у metadata.</p>';
+        return;
+      }
+
+      $('passportImageBox').innerHTML = `
+        <div style="text-align:center">
+          <img src="${metadata.image}" alt="Web3 Passport" style="max-width:100%; border-radius:18px; border:1px solid rgba(0,0,0,.08)" />
+          <p style="margin-top:12px">
+            <a href="${metadata.image}" target="_blank">Відкрити зображення</a>
+          </p>
+        </div>
+      `;
+    }
+
+    function renderBlockchain(blockchain) {
+      if (!blockchain) {
+        $('blockchainBox').innerHTML = '<p class="muted">Blockchain не налаштований.</p>';
+        return;
+      }
+
+      if (!blockchain.exists) {
+        $('blockchainBox').innerHTML = `
+          <p class="muted">Паспорт ще не створено у смарт-контракті.</p>
+          <p>Contract: <code>${blockchain.contractAddress}</code></p>
+        `;
+        return;
+      }
+
+      const matchBadge = blockchain.ownerMatchesDbWallet
+        ? '<span class="badge">Wallet збігається</span>'
+        : '<span class="badge danger">Wallet не збігається</span>';
+
+      $('blockchainBox').innerHTML = `
+        <p><b>Contract:</b><br><code>${blockchain.contractAddress}</code></p>
+        <p><b>Token ID:</b> <code>${blockchain.tokenId}</code></p>
+        <p><b>Owner on-chain:</b><br><code>${blockchain.owner}</code></p>
+        <p><b>tokenURI:</b><br><a href="${blockchain.tokenURI}" target="_blank">${blockchain.tokenURI}</a></p>
+        <p>${matchBadge}</p>
+        <p><a href="${blockchain.contractUrl}" target="_blank">Відкрити контракт у Sepolia Etherscan</a></p>
+      `;
+    }
+
+    function renderReputation(blockchain) {
+      if (!blockchain || !blockchain.exists || !blockchain.reputation) {
+        $('reputationBox').innerHTML = '<p class="muted">Репутація недоступна.</p>';
+        return;
+      }
+
+      const r = blockchain.reputation;
+
+      $('reputationBox').innerHTML = `
+        <div class="stats">
+          <div class="stat">
+            <small>Total points</small>
+            <b>${r.totalPoints}</b>
+          </div>
+          <div class="stat">
+            <small>Tasks completed</small>
+            <b>${r.tasksCompleted}</b>
+          </div>
+          <div class="stat">
+            <small>Reliability</small>
+            <b>${r.reliabilityScore}/100</b>
+          </div>
+          <div class="stat">
+            <small>Current streak</small>
+            <b>${r.currentStreak}</b>
+          </div>
+        </div>
+        <p class="muted" style="margin-top:12px">
+          Last updated: ${formatDateFromUnix(r.lastUpdatedAt)}
+        </p>
+      `;
+    }
+
+    function renderMetadata(metadata, metadataError) {
+      if (metadataError) {
+        $('metadataBox').textContent = `Metadata error: ${metadataError}`;
+        return;
+      }
+
+      if (!metadata) {
+        $('metadataBox').textContent = 'Metadata не знайдено.';
+        return;
+      }
+
+      $('metadataBox').textContent = JSON.stringify(metadata, null, 2);
+    }
+
+    async function loadPassport(tokenId) {
+      try {
+        setStatus('info', '⏳ Завантаження Web3-паспорта...');
+
+        const data = await api(`/api/passport/${tokenId}`);
+
+        renderEmployee(data.employee);
+        renderImage(data.metadata);
+        renderBlockchain(data.blockchain);
+        renderReputation(data.blockchain);
+        renderMetadata(data.metadata, data.metadataError);
+
+        if (data.status === 'not_minted') {
+          setStatus('err', '⚠️ Паспорт ще не замінчено у смарт-контракті.');
+        } else if (data.status === 'partial') {
+          setStatus('err', '⚠️ Blockchain не налаштований у .env.');
+        } else {
+          setStatus('ok', '✅ Web3-паспорт завантажено.');
+        }
+      } catch (error) {
+        setStatus('err', '❌ ' + error.message);
+      }
+    }
+
+    async function loadEmployeesForAdmin() {
+      const employees = await api('/api/employees');
+
+      $('adminSelectorBox').style.display = 'block';
+
+      $('employeeSelect').innerHTML = employees.map(e => `
+        <option value="${e.tokenId}">
+          ${e.avatar || '👤'} ${e.name} — ${e.role} (ID ${e.tokenId})
+        </option>
+      `).join('');
+    }
+
+    function loadSelectedPassport() {
+      const tokenId = $('employeeSelect').value;
+      loadPassport(tokenId);
+    }
+
+    async function init() {
+      try {
+        const me = await api('/api/auth/me');
+        currentUser = me.user;
+
+        const url = new URL(window.location.href);
+        const urlId = url.searchParams.get('id');
+
+        if (currentUser.role === 'admin') {
+          await loadEmployeesForAdmin();
+          loadPassport(urlId || $('employeeSelect').value);
+          return;
+        }
+
+        if (currentUser.employee) {
+          loadPassport(currentUser.employee.tokenId);
+          return;
+        }
+
+        setStatus('err', 'Не вдалося визначити працівника.');
+      } catch (error) {
+        setStatus('err', '❌ ' + error.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

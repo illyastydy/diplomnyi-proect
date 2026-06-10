@@ -1,0 +1,32 @@
+{
+  "name": "Web3 Professional Passport #8 — Артем",
+  "description": "Soulbound reputation passport for employee productivity tracking in a Web3-based information system.",
+  "image": "https://illyastydy.github.io/web3-passports-metadata/images/passport-8.png",
+  "attributes": [
+    {
+      "trait_type": "Employee",
+      "value": "Артем"
+    },
+    {
+      "trait_type": "Role",
+      "value": "Blockchain Developer"
+    },
+    {
+      "trait_type": "Grade",
+      "value": "Junior"
+    },
+    {
+      "trait_type": "Passport Type",
+      "value": "Soulbound Token"
+    },
+    {
+      "trait_type": "Transferability",
+      "value": "Non-transferable"
+    },
+    {
+      "trait_type": "System",
+      "value": "Productivity Stimulation Information System"
+    }
+  ],
+  "animation_url": "https://illyastydy.github.io/web3-passports-metadata/images/passport-8.svg"
+}

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Реєстрація працівника</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="layout narrow">
+    <section class="hero panel">
+      <span class="badge">Employee Registration</span>
+      <h1>Реєстрація працівника</h1>
+      <p class="muted">
+        Працівник може самостійно подати заявку: вказати імʼя, роль, рівень і MetaMask public address.
+        Вхід стане доступним після підтвердження адміністратором.
+      </p>
+
+      <form id="registerForm" class="auth-card">
+        <label>Імʼя працівника</label>
+        <input id="name" placeholder="Наприклад: Ілля" required />
+
+        <label>Роль у команді</label>
+        <select id="role">
+          <option>Frontend Developer</option>
+          <option>Backend Developer</option>
+          <option>Fullstack Developer</option>
+          <option>QA Engineer</option>
+          <option>UI/UX Designer</option>
+          <option>DevOps Engineer</option>
+          <option>Project Manager</option>
+          <option>Business Analyst</option>
+          <option>Blockchain Developer</option>
+          <option>Security Engineer</option>
+          <option>Data Analyst</option>
+          <option>Technical Support</option>
+        </select>
+
+        <label>Грейд / статус працівника</label>
+        <select id="grade">
+          <option>Intern</option>
+          <option selected>Junior</option>
+          <option>Middle</option>
+          <option>Senior</option>
+          <option>Team Lead</option>
+        </select>
+
+        <label>Аватар</label>
+        <select id="avatar">
+          <option>💻</option><option>🛠️</option><option>🧪</option><option>🎨</option>
+          <option>⚙️</option><option>📋</option><option>🌐</option><option>📊</option>
+          <option>⛓️</option><option>🔐</option><option>👤</option>
+        </select>
+
+        <label>MetaMask public address</label>
+        <input id="wallet" placeholder="0x..." required />
+
+        <label>Коментар до заявки</label>
+        <input id="registrationNote" placeholder="Наприклад: хочу зареєструвати профіль для дипломної демонстрації" />
+
+        <button type="button" class="secondary" id="metamaskBtn">🦊 Підставити адресу з MetaMask</button>
+        <button id="registerBtn">Подати заявку</button>
+        <div id="status" class="status show info">Заповніть форму або підтягніть адресу з MetaMask.</div>
+      </form>
+
+      <div class="nav-actions" style="margin-top:18px; justify-content:center">
+        <a href="login.html">Увійти через MetaMask</a>
+        <a href="index.html">На головну</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    function setStatus(type, message) {
+      $('status').className = `status show ${type}`;
+      $('status').innerHTML = message;
+    }
+
+    $('metamaskBtn').addEventListener('click', async () => {
+      try {
+        if (!window.ethereum) {
+          throw new Error('MetaMask не знайдено. Встановіть розширення у браузері.');
+        }
+
+        // Просимо MetaMask заново показати вибір акаунта для цього сайту
+        await window.ethereum.request({
+          method: 'wallet_requestPermissions',
+          params: [
+            {
+              eth_accounts: {}
+            }
+          ]
+        });
+
+        // Після вибору акаунта отримуємо дозволену адресу
+        const accounts = await window.ethereum.request({
+          method: 'eth_requestAccounts'
+        });
+
+        const selectedAddress = accounts[0];
+
+        if (!selectedAddress) {
+          throw new Error('Адресу MetaMask не отримано');
+        }
+
+        $('wallet').value = selectedAddress;
+
+        setStatus(
+          'info',
+          `✅ Адресу отримано з MetaMask:<br><code>${selectedAddress}</code>`
+        );
+      } catch (error) {
+        setStatus('err', '❌ ' + error.message);
+      }
+    });
+
+    $('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('registerBtn').disabled = true;
+      setStatus('info', '⏳ Створення заявки...');
+
+      try {
+        const res = await fetch('/api/register/employee', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: $('name').value,
+            role: $('role').value,
+            grade: $('grade').value,
+            avatar: $('avatar').value,
+            wallet: $('wallet').value,
+            registrationNote: $('registrationNote').value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || 'Помилка реєстрації');
+
+        setStatus('ok', `✅ ${data.message}<br><br>
+          Працівник: <b>${data.employee.avatar || '👤'} ${data.employee.name}</b><br>
+          Роль: <b>${data.employee.role}</b><br>
+          Грейд: <b>${data.employee.grade}</b><br>
+          Token ID: <b>${data.employee.tokenId}</b><br><br>
+          Після підтвердження адміністратором можна буде увійти через <a href="login.html">MetaMask</a>.`);
+        e.target.reset();
+      } catch (error) {
+        setStatus('err', '❌ ' + error.message);
+      } finally {
+        $('registerBtn').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

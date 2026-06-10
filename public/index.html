@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web3 Productivity System</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="hero">
+    <section class="panel hero-panel">
+      <div class="pill">Sepolia · SBT · Reputation Profile</div>
+      <h1>Інформаційна система стимулювання продуктивності робітників</h1>
+      <p class="lead">MVP для диплома: керівник фіксує результат задачі, backend розраховує репутацію, а Web3-паспорт зберігає ключові показники в блокчейні.</p>
+      <div class="nav-grid">
+        <a class="card" href="login.html"><span>🦊</span><h3>Вхід через MetaMask</h3><p>Авторизація через публічну адресу гаманця та цифровий підпис.</p></a>
+        <a class="card" href="admin.html"><span>👨‍💼</span><h3>Панель керівника</h3><p>Доступна тільки ролі admin.</p></a>
+        <a class="card" href="profile.html"><span>🪪</span><h3>Web3-профіль</h3><p>Працівник бачить тільки свій репутаційний профіль.</p></a>
+        <a class="card" href="register.html"><span>📝</span><h3>Реєстрація працівника</h3><p>Працівник подає заявку, а адміністратор підтверджує доступ.</p></a>
+      </div>
+      <div id="health" class="health">Перевірка статусу...</div>
+    </section>
+  </main>
+  <script>
+    fetch('/health').then(r => r.json()).then(data => {
+      document.getElementById('health').innerHTML = `System: <b>${data.status}</b> · Blockchain: <b>${data.blockchainConfigured ? 'configured' : 'demo mode'}</b>`;
+    });
+  </script>
+</body>
+</html>

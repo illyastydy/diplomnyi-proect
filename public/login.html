@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Вхід через MetaMask</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="layout narrow">
+    <section class="hero panel">
+      <span class="badge">Web3 Auth</span>
+      <h1>Вхід у систему продуктивності</h1>
+      <p class="muted">
+        Авторизація виконується через MetaMask: система отримує публічну адресу гаманця,
+        просить підписати nonce-повідомлення і визначає роль користувача.
+      </p>
+      <div class="auth-card">
+        <button id="loginBtn">🦊 Увійти через MetaMask</button>
+        <div id="status" class="status show info">Підключіть гаманець для входу.</div>
+      </div>
+      <div class="panel warning" style="margin-top:18px">
+        <h3>Важливо</h3>
+        <p>MetaMask не передає сайту приватний ключ. Сайт бачить тільки публічну адресу та цифровий підпис.</p>
+      </div>
+      <div class="nav-actions" style="margin-top:18px; justify-content:center">
+        <a href="register.html">Подати заявку працівника</a>
+        <a href="index.html">На головну</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const statusBox = document.getElementById('status');
+    const loginBtn = document.getElementById('loginBtn');
+
+    function setStatus(type, message) {
+      statusBox.className = `status show ${type}`;
+      statusBox.innerHTML = message;
+    }
+
+    async function loginWithMetaMask() {
+      try {
+        if (!window.ethereum) {
+          throw new Error('MetaMask не знайдено. Встановіть розширення MetaMask у браузері.');
+        }
+
+        loginBtn.disabled = true;
+        setStatus('info', '⏳ Запит адреси MetaMask...');
+
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const address = accounts[0];
+        if (!address) throw new Error('Гаманець не повернув адресу');
+
+        setStatus('info', `✅ Адреса отримана:<br><code>${address}</code><br>Підготуйте підпис повідомлення.`);
+
+        const nonceRes = await fetch('/api/auth/nonce', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address })
+        });
+        const nonceData = await nonceRes.json();
+        if (!nonceRes.ok) throw new Error(nonceData.message || 'Не вдалося отримати nonce');
+
+        const signature = await window.ethereum.request({
+          method: 'personal_sign',
+          params: [nonceData.message, address]
+        });
+
+        setStatus('info', '⏳ Перевірка підпису на backend...');
+
+        const verifyRes = await fetch('/api/auth/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address, signature })
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyRes.ok) throw new Error(verifyData.message || 'Авторизація не пройдена');
+
+        const role = verifyData.user.role;
+        setStatus('ok', `✅ Вхід виконано. Роль: <b>${role}</b>`);
+
+        setTimeout(() => {
+          window.location.href = role === 'admin' ? '/admin.html' : '/profile.html';
+        }, 500);
+      } catch (error) {
+        setStatus('err', '❌ ' + error.message);
+      } finally {
+        loginBtn.disabled = false;
+      }
+    }
+
+    loginBtn.addEventListener('click', loginWithMetaMask);
+  </script>
+</body>
+</html>

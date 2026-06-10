@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Аналітика продуктивності</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <main class="layout">
+    <section class="panel">
+      <div class="topbar">
+        <div>
+          <span class="badge">Admin Analytics</span>
+          <h1>Аналітика продуктивності</h1>
+          <p class="muted">
+            Узагальнена статистика по працівниках, задачах, репутації, дедлайнах і рекомендаціях розвитку.
+          </p>
+        </div>
+        <div class="nav-actions">
+          <a href="admin.html">Адмін-панель</a>
+          <a href="index.html">Головна</a>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <div class="stats" style="margin-top:18px">
+        <div class="stat">
+          <small>Працівників</small>
+          <b id="totalEmployees">0</b>
+        </div>
+        <div class="stat">
+          <small>Активних</small>
+          <b id="activeEmployees">0</b>
+        </div>
+        <div class="stat">
+          <small>Задач</small>
+          <b id="totalTasks">0</b>
+        </div>
+        <div class="stat">
+          <small>Балів</small>
+          <b id="totalPoints">0</b>
+        </div>
+        <div class="stat">
+          <small>Середня якість</small>
+          <b id="avgQuality">0</b>
+        </div>
+        <div class="stat">
+          <small>Reliability</small>
+          <b id="avgReliability">0</b>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="panel">
+        <h2>Динаміка продуктивності</h2>
+        <p class="muted">Кількість балів і середня якість по днях.</p>
+        <canvas id="trendChart"></canvas>
+      </div>
+
+      <div class="panel">
+        <h2>Рекомендації розвитку</h2>
+        <p class="muted">Стан проходження індивідуальних рекомендацій.</p>
+        <canvas id="recommendationsChart"></canvas>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="panel">
+        <h2>Задачі за категоріями</h2>
+        <p class="muted">Розподіл задач за напрямами роботи.</p>
+        <canvas id="categoryChart"></canvas>
+      </div>
+
+      <div class="panel">
+        <h2>Топ працівників</h2>
+        <p class="muted">Працівники з найбільшою кількістю репутаційних балів.</p>
+        <div id="topEmployees"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Працівники з ризиками</h2>
+      <p class="muted">
+        Система визначає працівників, у яких є зриви дедлайнів, низька якість або знижений reliability score.
+      </p>
+      <div id="riskyEmployees"></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    function setStatus(type, message) {
+      const el = $('status');
+      el.className = `status show ${type}`;
+      el.innerHTML = message;
+    }
+
+    async function api(url) {
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || data.error || 'Помилка API');
+      }
+
+      return data;
+    }
+
+    function riskBadge(employee) {
+      const missed = Number(employee.missedDeadlines || 0);
+      const quality = Number(employee.avgQuality || 0);
+      const reliability = Number(employee.reliability || 100);
+
+      if (missed >= 2 || quality < 65 || reliability < 70) {
+        return '<span class="badge danger">Високий ризик</span>';
+      }
+
+      if (missed >= 1 || quality < 75 || reliability < 80) {
+        return '<span class="badge warning">Середній ризик</span>';
+      }
+
+      return '<span class="badge">Низький ризик</span>';
+    }
+
+    function renderTopEmployees(rows) {
+      const box = $('topEmployees');
+
+      if (!rows.length) {
+        box.innerHTML = '<p class="muted">Поки немає даних.</p>';
+        return;
+      }
+
+      box.innerHTML = rows.map((e, index) => `
+        <div class="employee-row">
+          <span>${index === 0 ? '🏆' : e.avatar || '👤'}</span>
+          <div style="flex:1">
+            <b>${e.name}</b><br>
+            <small>${e.role} · ${e.grade || 'Junior'} · ID ${e.tokenId}</small>
+          </div>
+          <div style="text-align:right">
+            <b>${e.points}</b><br>
+            <small>${e.tasks} задач · ${e.reliability}/100</small>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderRiskyEmployees(rows) {
+      const box = $('riskyEmployees');
+
+      if (!rows.length) {
+        box.innerHTML = '<p class="muted">Критичних ризиків не виявлено.</p>';
+        return;
+      }
+
+      box.innerHTML = rows.map(e => `
+        <div class="employee-row">
+          <span>${e.avatar || '👤'}</span>
+          <div style="flex:1">
+            <b>${e.name}</b><br>
+            <small>${e.role} · ${e.grade || 'Junior'} · ID ${e.tokenId}</small><br>
+            <small>
+              Дедлайни: ${e.missedDeadlines} ·
+              Якість: ${e.avgQuality || 0}% ·
+              Reliability: ${e.reliability}/100
+            </small>
+          </div>
+          <div>
+            ${riskBadge(e)}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function createTrendChart(trend) {
+      const labels = trend.map(i => i.date);
+      const points = trend.map(i => Number(i.points || 0));
+      const quality = trend.map(i => Number(i.avgQuality || 0));
+
+      new Chart($('trendChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Бали',
+              data: points,
+              tension: 0.35
+            },
+            {
+              label: 'Якість',
+              data: quality,
+              tension: 0.35
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          }
+        }
+      });
+    }
+
+    function createRecommendationsChart(rows) {
+      const labels = rows.map(i => i.status);
+      const values = rows.map(i => Number(i.total || 0));
+
+      new Chart($('recommendationsChart'), {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Рекомендації',
+              data: values
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          }
+        }
+      });
+    }
+
+    function createCategoryChart(rows) {
+      const labels = rows.map(i => i.taskCategory);
+      const values = rows.map(i => Number(i.totalTasks || 0));
+
+      new Chart($('categoryChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Кількість задач',
+              data: values
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            }
+          }
+        }
+      });
+    }
+
+    async function loadAnalytics() {
+      try {
+        setStatus('info', '⏳ Завантаження аналітики...');
+
+        const data = await api('/api/analytics/overview');
+        const totals = data.totals || {};
+
+        $('totalEmployees').innerText = totals.totalEmployees || 0;
+        $('activeEmployees').innerText = totals.activeEmployees || 0;
+        $('totalTasks').innerText = totals.totalTasks || 0;
+        $('totalPoints').innerText = totals.totalPoints || 0;
+        $('avgQuality').innerText = `${totals.avgQuality || 0}%`;
+        $('avgReliability').innerText = `${totals.avgReliability || 100}/100`;
+
+        renderTopEmployees(data.topEmployees || []);
+        renderRiskyEmployees(data.riskyEmployees || []);
+
+        createTrendChart(data.trend || []);
+        createRecommendationsChart(data.recommendationStats || []);
+        createCategoryChart(data.categoryStats || []);
+
+        setStatus('ok', '✅ Аналітику завантажено');
+      } catch (error) {
+        setStatus('err', '❌ ' + error.message);
+      }
+    }
+
+    loadAnalytics();
+  </script>
+</body>
+</html>

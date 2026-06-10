@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Панель керівника</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="layout">
+    <div class="topbar">
+      <div>
+        <h1>Панель керівника</h1>
+        <p class="muted">Додавання виконаних задач, підтвердження заявок, привʼязка гаманців та оновлення репутації.</p>
+        <p id="authInfo" class="muted small">Перевірка авторизації...</p>
+      </div>
+      <div class="nav-actions">
+        <a href="profile.html">Профіль</a>
+        <a href="register.html">Реєстрація</a>
+        <a href="index.html">Головна</a>
+        <a href="analytics.html">Аналітика</a>
+        <a href="passport.html">Web3-паспорт</a>
+        <button class="secondary" onclick="logout()">Вийти</button>
+      </div>
+    </div>
+
+    <section class="grid">
+      <form class="panel" id="taskForm">
+        <h2>Закрити задачу</h2>
+        <label>Працівник</label>
+        <select id="employeeTokenId" required></select>
+
+        <label>Назва задачі</label>
+        <input id="taskTitle" placeholder="Наприклад: Реалізація Web3-профілю" required />
+
+        <label>Категорія</label>
+        <select id="taskCategory">
+          <option>Frontend</option>
+          <option>Backend</option>
+          <option>QA</option>
+          <option>DevOps</option>
+          <option>Documentation</option>
+          <option>Blockchain</option>
+        </select>
+
+        <label>Складність задачі: <span id="complexityValue">3</span>/5</label>
+        <input id="taskComplexity" type="range" min="1" max="5" value="3" />
+
+        <label>Якість виконання: <span id="qualityValue">85</span>/100</label>
+        <input id="qualityScore" type="range" min="0" max="100" value="85" />
+
+        <label><input type="checkbox" id="missedDeadline" style="width:auto" /> Дедлайн було зірвано</label>
+        <button id="submitBtn">Підтвердити результат</button>
+        <div id="status" class="status"></div>
+      </form>
+
+      <section class="panel">
+        <h2>Заявки на реєстрацію</h2>
+        <p class="muted small">Працівник подає заявку через register.html. Після підтвердження він зможе увійти через MetaMask.</p>
+        <div id="pendingList" class="employee-list muted">Завантаження...</div>
+      </section>
+
+      <section class="panel">
+        <h2>Працівники</h2>
+        <p class="muted small">Активні працівники можуть входити через MetaMask. Pending — очікують підтвердження, blocked — заблоковані.</p>
+        <div id="employeesList" class="employee-list muted">Завантаження...</div>
+      </section>
+
+      <section class="panel">
+        <h2>Привʼязати гаманець</h2>
+        <label>Працівник</label>
+        <select id="walletEmployee"></select>
+        <label>MetaMask address працівника</label>
+        <input id="employeeWallet" placeholder="0x..." />
+        <button id="walletBtn">Зберегти wallet</button>
+        <div id="walletStatus" class="status"></div>
+      </section>
+
+      <section class="panel full">
+        <h2>Рейтинг команди</h2>
+        <table>
+          <thead><tr><th>Працівник</th><th>Бали</th><th>Задачі</th><th>Надійність</th></tr></thead>
+          <tbody id="leaderboard"></tbody>
+        </table>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    $('taskComplexity').oninput = e => $('complexityValue').innerText = e.target.value;
+    $('qualityScore').oninput = e => $('qualityValue').innerText = e.target.value;
+
+    let loadedEmployees = [];
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, options);
+      if (res.status === 401) window.location.href = '/login.html';
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error || 'Помилка сервера');
+      return data;
+    }
+
+    async function loadAuth() {
+      const data = await api('/api/auth/me');
+      $('authInfo').innerHTML = `Роль: <b>${data.user.role}</b> · Wallet: <code>${data.user.address}</code>`;
+    }
+
+    async function logout() {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    }
+
+    function statusBadge(status) {
+      if (status === 'active') return '✅ active';
+      if (status === 'pending') return '⏳ pending';
+      if (status === 'blocked') return '⛔ blocked';
+      return status || 'active';
+    }
+
+    async function loadEmployees() {
+      try {
+        let employees = await api('/api/employees');
+        if (!Array.isArray(employees)) throw new Error(employees.message || employees.error || 'API повернув не список працівників');
+        if (employees.length === 0) {
+          const seeded = await api('/api/dev/seed-employees', { method: 'POST' });
+          employees = seeded.employees || [];
+        }
+        loadedEmployees = employees;
+        const activeEmployees = employees.filter(e => (e.status || 'active') === 'active');
+        const selectable = activeEmployees.length ? activeEmployees : employees;
+        const options = selectable.length
+          ? selectable.map(e => `<option value="${e.tokenId}">${e.avatar || '👤'} ${e.name} — ${e.role} (ID ${e.tokenId})</option>`).join('')
+          : '<option value="">Працівників не знайдено</option>';
+        $('employeeTokenId').innerHTML = options;
+        $('walletEmployee').innerHTML = employees.length
+          ? employees.map(e => `<option value="${e.tokenId}">${e.avatar || '👤'} ${e.name} — ${e.role} (ID ${e.tokenId})</option>`).join('')
+          : '<option value="">Працівників не знайдено</option>';
+
+        const list = $('employeesList');
+        list.innerHTML = employees.length
+          ? employees.map(e => `<div class="employee-row">
+              <span>${e.avatar || '👤'}</span>
+              <div style="flex:1">
+                <b>${e.name}</b><br>
+                <small>${e.role} · ${e.grade || 'Junior'} · ${statusBadge(e.status)} · ID ${e.tokenId}</small><br>
+                <small>Wallet: ${e.wallet ? `<code>${e.wallet}</code>` : '<span class="muted">не привʼязаний</span>'}</small>
+              </div>
+              <div class="row-actions">
+                <a class="mini" href="passport.html?id=${e.tokenId}">Web3</a>
+                <button class="mini" onclick="syncMetadata(event, ${e.tokenId})">
+                  🔄 Metadata
+                </button>
+                ${e.status !== 'active' ? `<button class="mini" onclick="setEmployeeStatus(${e.tokenId}, 'active')">Активувати</button>` : ''}
+                ${e.status !== 'blocked' ? `<button class="mini danger" onclick="setEmployeeStatus(${e.tokenId}, 'blocked')">Блок</button>` : ''}
+              </div>
+            </div>`).join('')
+          : 'Працівників не знайдено. Перевірте backend.';
+      } catch (err) {
+        $('employeeTokenId').innerHTML = '<option value="">Помилка завантаження</option>';
+        $('employeesList').innerHTML = `❌ ${err.message}`;
+      }
+    }
+
+    async function loadPendingRegistrations() {
+      try {
+        const rows = await api('/api/registrations');
+        $('pendingList').innerHTML = rows.length ? rows.map(e => `<div class="employee-row">
+          <span>${e.avatar || '👤'}</span>
+          <div style="flex:1">
+            <b>${e.name}</b><br>
+            <small>${e.role} · ${e.grade || 'Junior'} · ID ${e.tokenId}</small><br>
+            <small>Wallet: ${e.wallet ? `<code>${e.wallet}</code>` : '—'}</small><br>
+            ${e.registrationNote ? `<small>Коментар: ${e.registrationNote}</small>` : ''}
+          </div>
+          <div class="row-actions">
+            <button class="mini" onclick="approveRegistration(${e.tokenId})">Підтвердити</button>
+            <button class="mini danger" onclick="blockRegistration(${e.tokenId})">Відхилити</button>
+          </div>
+        </div>`).join('') : 'Нових заявок немає.';
+      } catch (err) {
+        $('pendingList').innerHTML = `❌ ${err.message}`;
+      }
+    }
+
+    async function approveRegistration(tokenId) {
+      try {
+        await api(`/api/registrations/${tokenId}/approve`, { method: 'POST' });
+        await refreshAll();
+      } catch (err) { alert('Помилка: ' + err.message); }
+    }
+
+    async function blockRegistration(tokenId) {
+      try {
+        await api(`/api/registrations/${tokenId}/block`, { method: 'POST' });
+        await refreshAll();
+      } catch (err) { alert('Помилка: ' + err.message); }
+    }
+
+    async function setEmployeeStatus(tokenId, status) {
+      try {
+        await api(`/api/employees/${tokenId}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status })
+        });
+        await refreshAll();
+      } catch (err) { alert('Помилка: ' + err.message); }
+    }
+
+    async function loadLeaderboard() {
+      const rows = await api('/api/leaderboard');
+      $('leaderboard').innerHTML = rows.map(r => `<tr><td>${r.avatar || ''} <b>${r.name}</b><br><small>${r.role} · ${r.grade || 'Junior'}</small></td><td>${r.points}</td><td>${r.tasks}</td><td>${r.reliability}/100</td></tr>`).join('');
+    }
+
+    function setStatus(id, type, html) {
+      $(id).className = `status show ${type}`;
+      $(id).innerHTML = html;
+    }
+
+    $('walletEmployee').addEventListener('change', () => {
+      const emp = loadedEmployees.find(e => String(e.tokenId) === String($('walletEmployee').value));
+      $('employeeWallet').value = emp?.wallet || '';
+    });
+
+    $('walletBtn').addEventListener('click', async () => {
+      try {
+        setStatus('walletStatus', 'info', '⏳ Збереження wallet...');
+        const tokenId = $('walletEmployee').value;
+        const wallet = $('employeeWallet').value.trim();
+        const data = await api(`/api/employees/${tokenId}/wallet`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet })
+        });
+        setStatus('walletStatus', 'ok', `✅ Wallet привʼязано до ${data.employee.name}`);
+        await refreshAll();
+      } catch (err) {
+        setStatus('walletStatus', 'err', '❌ ' + err.message);
+      }
+    });
+
+    $('taskForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('submitBtn').disabled = true;
+      setStatus('status', 'info', '⏳ Розрахунок репутації та запис транзакції...');
+      try {
+        const data = await api('/webhook/task-completed', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            employeeTokenId: Number($('employeeTokenId').value),
+            taskTitle: $('taskTitle').value,
+            taskCategory: $('taskCategory').value,
+            taskComplexity: Number($('taskComplexity').value),
+            qualityScore: Number($('qualityScore').value),
+            missedDeadline: $('missedDeadline').checked
+          })
+        });
+        setStatus('status', 'ok', `✅ Задачу зафіксовано.<br>Нараховано: <b>${data.scoring.earnedPoints}</b> балів · Надійність: <b>${data.scoring.reliabilityScore}/100</b><br>${data.etherscanUrl ? `<a target="_blank" href="${data.etherscanUrl}">Переглянути транзакцію</a>` : 'Blockchain demo mode: транзакцію пропущено'}`);
+        e.target.reset(); $('complexityValue').innerText = 3; $('qualityValue').innerText = 85;
+        await loadLeaderboard();
+      } catch (err) { setStatus('status', 'err', '❌ ' + err.message); }
+      finally { $('submitBtn').disabled = false; }
+    });
+
+    async function refreshAll() {
+      await loadEmployees();
+      await loadPendingRegistrations();
+      await loadLeaderboard();
+      const emp = loadedEmployees.find(e => String(e.tokenId) === String($('walletEmployee').value));
+      $('employeeWallet').value = emp?.wallet || '';
+    }
+    async function syncMetadata(event, tokenId) {
+  const button = event?.target;
+
+  try {
+    if (button) {
+      button.disabled = true;
+      button.innerText = '⏳ Metadata...';
+    }
+
+    const res = await fetch(`/api/employees/${tokenId}/sync-metadata`, {
+      method: 'POST'
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || 'Помилка оновлення metadata');
+    }
+
+    alert(
+      `✅ Metadata оновлено!\n\n` +
+      `Працівник: ${data.employee.name}\n` +
+      `JSON: ${data.github.metadataUrl}\n` +
+      `Image: ${data.github.imageUrl}\n` +
+      `Commit: ${data.github.commitUrl || 'посилання недоступне'}`
+    );
+
+    console.log('Metadata sync result:', data);
+  } catch (error) {
+    alert('❌ Помилка: ' + error.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerText = '🔄 Metadata';
+    }
+  }
+}
+
+    loadAuth();
+    refreshAll();
+  </script>
+</body>
+</html>

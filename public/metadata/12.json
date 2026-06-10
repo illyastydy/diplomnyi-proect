@@ -1,0 +1,32 @@
+{
+  "name": "Web3 Professional Passport #12 — Назар",
+  "description": "Soulbound reputation passport for employee productivity tracking in a Web3-based information system.",
+  "image": "https://illyastydy.github.io/web3-passports-metadata/images/passport-12.png",
+  "attributes": [
+    {
+      "trait_type": "Employee",
+      "value": "Назар"
+    },
+    {
+      "trait_type": "Role",
+      "value": "Technical Support"
+    },
+    {
+      "trait_type": "Grade",
+      "value": "Intern"
+    },
+    {
+      "trait_type": "Passport Type",
+      "value": "Soulbound Token"
+    },
+    {
+      "trait_type": "Transferability",
+      "value": "Non-transferable"
+    },
+    {
+      "trait_type": "System",
+      "value": "Productivity Stimulation Information System"
+    }
+  ],
+  "animation_url": "https://illyastydy.github.io/web3-passports-metadata/images/passport-12.svg"
+}
