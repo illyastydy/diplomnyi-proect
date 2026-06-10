@@ -1,0 +1,21 @@
+{
+  "name": "web3-productivity-system-upgraded",
+  "version": "2.0.0",
+  "description": "Information system for stimulating employee productivity using reputation-based Web3 profiles",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["web3", "sbt", "reputation", "productivity", "diploma"],
+  "author": "Illya Rak",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "ethers": "^5.7.2",
+    "express": "^5.2.1",
+    "sqlite3": "^6.0.1"
+  }
+}
